@@ -1,0 +1,11 @@
+{
+  "Version": 1,
+  "Hash": "DN7TiypjhwVDXVVXuO/m1X64UdUMzELiQ5yEKG9fBZc=",
+  "Source": "SmartERP.AdvancedModule",
+  "BasePath": "_content/SmartERP.AdvancedModule",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": []
+}
