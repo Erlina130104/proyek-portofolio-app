@@ -1,29 +1,3 @@
-/**
- * Transactions Management Module - Costume Business ERP
- * 
- * Tech Stack:
- * - Frontend: Vue.js 3 (Options API)
- * - Backend: Laravel 10 REST API (simulated with localStorage)
- * - Database: MySQL 8.0 (simulated with localStorage)
- * - State Management: Component State
- * 
- * Features:
- * - Sales & Rental transaction management
- * - Real-time inventory integration
- * - Multiple payment methods support
- * - Customer tracking
- * - Revenue analytics & reporting
- * - Automatic stock deduction
- * - Transaction history with filtering
- * - Mobile-responsive design
- * 
- * ERP Integration Points:
- * - Sales Management System
- * - Inventory Control (auto stock update)
- * - Financial Reporting
- * - Customer Relationship Management
- */
-
 <template>
   <div class="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 p-4 md:p-8">
     <!-- Header -->
