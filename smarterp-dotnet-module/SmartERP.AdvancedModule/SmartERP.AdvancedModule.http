@@ -1,6 +1,0 @@
-@SmartERP.AdvancedModule_HostAddress = http://localhost:5103
-
-GET {{SmartERP.AdvancedModule_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###
