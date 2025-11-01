@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SmartERP.AdvancedModule")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+77dd40af5b3a66b7c236014abc331048c79a8951")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+745c242f90f5cb342e7da9ee38a68bc7a984545c")]
 [assembly: System.Reflection.AssemblyProductAttribute("SmartERP.AdvancedModule")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SmartERP.AdvancedModule")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

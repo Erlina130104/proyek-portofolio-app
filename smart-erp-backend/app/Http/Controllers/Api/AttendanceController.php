@@ -7,34 +7,45 @@ use App\Models\Attendance;
 use App\Models\Employee;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
-use Carbon\Carbon;
+use Carbon\Carbon; // Library buat handle tanggal & waktu
 
 class AttendanceController extends Controller
 {
+    /**
+     * GET /api/attendances
+     * Ambil list absensi dengan berbagai filter
+     */
     public function index(Request $request)
     {
         try {
+            // Ambil data absensi + nama karyawan sekalian
             $query = Attendance::with('employee');
 
+            // Filter by tanggal tertentu (contoh: 2024-01-15)
             if ($request->has('date')) {
                 $query->whereDate('date', $request->date);
             }
 
+            // Filter by bulan & tahun (contoh: month=1&year=2024)
             if ($request->has('month') && $request->has('year')) {
                 $query->whereMonth('date', $request->month)
                       ->whereYear('date', $request->year);
             }
 
+            // Filter by karyawan tertentu
             if ($request->has('employee_id')) {
                 $query->where('employee_id', $request->employee_id);
             }
 
+            // Filter by status (present/late/absent/leave/sick)
             if ($request->has('status')) {
                 $query->where('status', $request->status);
             }
 
+            // Urutkan dari yang terbaru
             $query->orderBy('date', 'desc');
 
+            // Pagination
             $perPage = $request->input('per_page', 15);
             $attendances = $query->paginate($perPage);
 
@@ -42,20 +53,27 @@ class AttendanceController extends Controller
                 'success' => true,
                 'data' => $attendances
             ]);
+
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Gagal mengambil data kehadiran',
+                'message' => 'Gagal ambil data absensi',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
 
+    /**
+     * POST /api/attendances/record
+     * Buat record check-in atau check-out karyawan
+     * Ini yang dipake pas karyawan scan/tap di mesin absensi
+     */
     public function record(Request $request)
     {
+        // Validasi input
         $validator = Validator::make($request->all(), [
             'employee_id' => 'required|exists:employees,id',
-            'type' => 'required|in:check_in,check_out',
+            'type' => 'required|in:check_in,check_out', // Harus salah satu dari 2 ini
             'notes' => 'nullable|string'
         ]);
 
@@ -69,48 +87,58 @@ class AttendanceController extends Controller
 
         try {
             $employee = Employee::findOrFail($request->employee_id);
-            $today = Carbon::today();
-            $now = Carbon::now();
+            $today = Carbon::today(); // Tanggal hari ini (00:00:00)
+            $now = Carbon::now(); // Waktu sekarang (dengan jam/menit/detik)
 
+            // Cari atau buat record absensi hari ini
+            // Kalo belum ada, bikin baru dengan status absent dulu
             $attendance = Attendance::firstOrCreate(
-                [
-                    'employee_id' => $request->employee_id,
-                    'date' => $today
-                ],
-                [
-                    'status' => 'absent'
-                ]
+                ['employee_id' => $request->employee_id, 'date' => $today],
+                ['status' => 'absent']
             );
 
+            // === PROSES CHECK-IN ===
             if ($request->type === 'check_in') {
+
+                // Kalo udah pernah check-in hari ini, ga bisa check-in lagi
                 if ($attendance->check_in) {
                     return response()->json([
-                        'success' => false,
-                        'message' => 'Karyawan sudah melakukan check-in hari ini'
+                        'success' => false, 
+                        'message' => 'Sudah check-in'
                     ], 400);
                 }
 
+                // Catat waktu check-in
                 $attendance->check_in = $now;
-                
-                $workStartTime = Carbon::createFromTime(9, 0, 0);
-                $attendance->status = $now->greaterThan($workStartTime) ? 'late' : 'present';
+
+                // Tentuin status: kalo lewat jam 9 pagi = telat, kalo ga = hadir
+                $jamSembilan = Carbon::createFromTime(9, 0, 0); // Jam 9:00:00
+                $attendance->status = $now->greaterThan($jamSembilan) ? 'late' : 'present';
+
                 $attendance->notes = $request->notes;
                 $message = 'Check-in berhasil';
-            } else {
+
+            } 
+            // === PROSES CHECK-OUT ===
+            else {
+
+                // Kalo belum check-in, ga bisa check-out
                 if (!$attendance->check_in) {
                     return response()->json([
-                        'success' => false,
-                        'message' => 'Karyawan belum melakukan check-in'
+                        'success' => false, 
+                        'message' => 'Belum check-in'
                     ], 400);
                 }
 
+                // Kalo udah check-out, ga bisa check-out lagi
                 if ($attendance->check_out) {
                     return response()->json([
-                        'success' => false,
-                        'message' => 'Karyawan sudah melakukan check-out hari ini'
+                        'success' => false, 
+                        'message' => 'Sudah check-out'
                     ], 400);
                 }
 
+                // Catat waktu check-out
                 $attendance->check_out = $now;
                 $message = 'Check-out berhasil';
             }
@@ -122,22 +150,28 @@ class AttendanceController extends Controller
                 'message' => $message,
                 'data' => $attendance->load('employee')
             ]);
+
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Gagal merekam kehadiran',
+                'message' => 'Gagal rekam absensi',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
 
+    /**
+     * POST /api/attendances
+     * Input absensi manual oleh admin
+     * Misalnya karyawan lupa absen, atau ada yang sakit/cuti
+     */
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
             'employee_id' => 'required|exists:employees,id',
             'date' => 'required|date',
-            'check_in' => 'nullable|date_format:H:i',
-            'check_out' => 'nullable|date_format:H:i',
+            'check_in' => 'nullable|date_format:H:i',  // Format: 08:30
+            'check_out' => 'nullable|date_format:H:i', // Format: 17:00
             'status' => 'required|in:present,late,absent,leave,sick',
             'notes' => 'nullable|string'
         ]);
@@ -151,6 +185,8 @@ class AttendanceController extends Controller
         }
 
         try {
+            // updateOrCreate = kalo udah ada update, kalo belum ada create
+            // Jadi ga bakal duplicate per tanggal & karyawan
             $attendance = Attendance::updateOrCreate(
                 [
                     'employee_id' => $request->employee_id,
@@ -166,108 +202,88 @@ class AttendanceController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Data kehadiran berhasil disimpan',
+                'message' => 'Data tersimpan',
                 'data' => $attendance->load('employee')
             ], 201);
+
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Gagal menyimpan data kehadiran',
+                'message' => 'Gagal simpan data',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
 
+    /**
+     * GET /api/attendances/statistics
+     * Statistik absensi per bulan
+     * Cocok buat dashboard atau report bulanan
+     */
     public function statistics(Request $request)
     {
         try {
+            // Default bulan & tahun sekarang kalo ga dikasih parameter
             $month = $request->input('month', date('m'));
             $year = $request->input('year', date('Y'));
 
+            // Ambil semua absensi di bulan & tahun tertentu
             $query = Attendance::whereMonth('date', $month)
-                ->whereYear('date', $year);
+                               ->whereYear('date', $year);
 
-            $totalEmployees = Employee::active()->count();
-            $workDays = Carbon::createFromDate($year, $month, 1)->daysInMonth;
-            $expectedAttendance = $totalEmployees * $workDays;
-
+            // Hitung jumlah tiap status
             $stats = [
-                'total_employees' => $totalEmployees,
-                'work_days' => $workDays,
-                'expected_attendance' => $expectedAttendance,
-                'actual_attendance' => $query->count(),
-                'present' => $query->where('status', 'present')->count(),
-                'late' => $query->where('status', 'late')->count(),
-                'absent' => $query->where('status', 'absent')->count(),
-                'leave' => $query->where('status', 'leave')->count(),
-                'sick' => $query->where('status', 'sick')->count()
+                'present' => $query->where('status', 'present')->count(),  // Hadir tepat waktu
+                'late' => $query->where('status', 'late')->count(),        // Terlambat
+                'absent' => $query->where('status', 'absent')->count(),    // Tidak hadir
+                'leave' => $query->where('status', 'leave')->count(),      // Cuti
+                'sick' => $query->where('status', 'sick')->count(),        // Sakit
             ];
-
-            $stats['attendance_rate'] = $expectedAttendance > 0 
-                ? round((($stats['present'] + $stats['late']) / $expectedAttendance) * 100, 1)
-                : 0;
 
             return response()->json([
                 'success' => true,
                 'data' => $stats
             ]);
+
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Gagal mengambil statistik kehadiran',
+                'message' => 'Gagal ambil statistik',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
 
+    /**
+     * GET /api/attendances/today-summary
+     * Ringkasan absensi hari ini
+     * Buat monitoring real-time siapa aja yang udah check-in/out
+     */
     public function todaySummary()
     {
         try {
             $today = Carbon::today();
-            $totalEmployees = Employee::active()->count();
             
+            // Ambil semua absensi hari ini
             $attendances = Attendance::with('employee')
-                ->whereDate('date', $today)
-                ->get();
-
-            $checkedIn = $attendances->filter(function($att) {
-                return $att->check_in !== null;
-            })->count();
-
-            $checkedOut = $attendances->filter(function($att) {
-                return $att->check_out !== null;
-            })->count();
+                                    ->whereDate('date', $today)
+                                    ->get();
 
             $summary = [
                 'date' => $today->format('Y-m-d'),
-                'total_employees' => $totalEmployees,
-                'checked_in' => $checkedIn,
-                'checked_out' => $checkedOut,
-                'not_checked_in' => $totalEmployees - $checkedIn,
-                'present' => $attendances->where('status', 'present')->count(),
-                'late' => $attendances->where('status', 'late')->count(),
-                'absent' => $attendances->where('status', 'absent')->count(),
-                'leave' => $attendances->where('status', 'leave')->count(),
-                'sick' => $attendances->where('status', 'sick')->count(),
-                'recent_check_ins' => $attendances->sortByDesc('check_in')
-                    ->take(5)
-                    ->map(function($att) {
-                        return [
-                            'employee_name' => $att->employee->name,
-                            'check_in' => $att->check_in ? Carbon::parse($att->check_in)->format('H:i') : null,
-                            'status' => $att->status
-                        ];
-                    })->values()
+                'checked_in' => $attendances->whereNotNull('check_in')->count(),   // Yang udah check-in
+                'checked_out' => $attendances->whereNotNull('check_out')->count(), // Yang udah check-out
             ];
 
             return response()->json([
                 'success' => true,
                 'data' => $summary
             ]);
+
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Gagal mengambil ringkasan kehadiran hari ini',
+                'message' => 'Gagal ambil data hari ini',
                 'error' => $e->getMessage()
             ], 500);
         }

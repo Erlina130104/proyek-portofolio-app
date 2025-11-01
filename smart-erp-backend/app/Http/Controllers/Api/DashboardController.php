@@ -17,38 +17,51 @@ class DashboardController extends Controller
 {
     /**
      * Get dashboard overview statistics
+     * → fungsi ini menampilkan ringkasan data dashboard (produk, transaksi, karyawan, feedback)
      */
     public function overview()
     {
         try {
-            // Quick Stats
+            // Hitung jumlah produk aktif
             $productsCount = Product::active()->count();
+
+            // Hitung jumlah transaksi selesai bulan ini
             $transactionsThisMonth = Transaction::thisMonth()->where('transactions.status', 'completed')->count();
+
+            // Hitung jumlah karyawan aktif
             $employeesCount = Employee::active()->count();
+
+            // Hitung tiket support yang belum ditangani
             $pendingTickets = SupportTicket::pending()->count();
 
-            // Growth calculations (compare with last month)
+            // Hitung transaksi bulan lalu untuk perbandingan pertumbuhan
             $lastMonthTransactions = Transaction::whereMonth('transaction_date', Carbon::now()->subMonth()->month)
                 ->whereYear('transaction_date', Carbon::now()->subMonth()->year)
                 ->where('transactions.status', 'completed')
                 ->count();
             
+            // Hitung persentase pertumbuhan transaksi
             $transactionGrowth = $lastMonthTransactions > 0 
                 ? round((($transactionsThisMonth - $lastMonthTransactions) / $lastMonthTransactions) * 100, 1)
                 : 0;
 
-            // Attendance Rate
+            // Hitung total hari kerja bulan ini
             $totalWorkDays = Carbon::now()->daysInMonth;
+
+            // Hitung total kehadiran yang seharusnya
             $totalExpectedAttendance = $employeesCount * $totalWorkDays;
+
+            // Hitung kehadiran aktual yang hadir atau terlambat
             $actualAttendance = Attendance::thisMonth()
                 ->whereIn('attendances.status', ['present', 'late'])
                 ->count();
             
+            // Hitung rasio kehadiran dalam persen
             $attendanceRate = $totalExpectedAttendance > 0 
                 ? round(($actualAttendance / $totalExpectedAttendance) * 100, 1)
                 : 0;
 
-            // Business Overview
+            // Data ringkasan bisnis
             $businessOverview = [
                 'products_count' => $productsCount,
                 'transactions_count' => $transactionsThisMonth,
@@ -58,7 +71,7 @@ class DashboardController extends Controller
                     : 'Penjualan menurun dibanding bulan lalu'
             ];
 
-            // People Overview
+            // Data ringkasan SDM & kehadiran
             $peopleOverview = [
                 'employees_count' => $employeesCount,
                 'attendance_rate' => $attendanceRate,
@@ -67,7 +80,7 @@ class DashboardController extends Controller
                     : 'Perlu perhatian pada kehadiran karyawan'
             ];
 
-            // Recent Feedbacks
+            // Ambil 3 feedback pelanggan terbaru
             $recentFeedbacks = CustomerFeedback::with(['customer', 'product'])
                 ->orderBy('created_at', 'desc')
                 ->limit(3)
@@ -82,7 +95,7 @@ class DashboardController extends Controller
                     ];
                 });
 
-            // AI Insights - Most Popular Product Category
+            // Analisa kategori produk paling laku bulan ini
             $popularCategory = Transaction::whereMonth('transaction_date', date('m'))
                 ->whereYear('transaction_date', date('Y'))
                 ->where('transactions.status', 'completed')
@@ -93,10 +106,12 @@ class DashboardController extends Controller
                 ->orderBy('total_sold', 'desc')
                 ->first();
 
+            // Insight sederhana berdasarkan kategori paling laku
             $aiInsight = $popularCategory 
                 ? "Produk {$popularCategory->category} paling banyak diminati"
                 : "Belum ada data penjualan bulan ini";
 
+            // Kirim semua data sebagai response JSON
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -125,10 +140,12 @@ class DashboardController extends Controller
                         'recent_feedbacks' => $recentFeedbacks,
                         'ai_insight' => $aiInsight
                     ],
+                    // Tampilkan tanggal sekarang format Indonesia
                     'current_date' => Carbon::now()->locale('id')->isoFormat('D MMMM YYYY')
                 ]
             ]);
         } catch (\Exception $e) {
+            // Kalau terjadi error, kirim pesan error
             return response()->json([
                 'success' => false,
                 'message' => 'Gagal mengambil data dashboard',
@@ -137,27 +154,37 @@ class DashboardController extends Controller
         }
     }
 
-    /**
+        /**
      * Get sales chart data
+     * → fungsi ini buat grafik penjualan (default 6 bulan terakhir)
      */
     public function salesChart(Request $request)
     {
         try {
+            // Ambil periode chart (default bulanan)
             $period = $request->input('period', 'monthly');
             
             $chartData = [];
             
             if ($period === 'monthly') {
+                // Loop 6 bulan terakhir
                 for ($i = 5; $i >= 0; $i--) {
                     $date = Carbon::now()->subMonths($i);
+
+                    // Total penjualan bulan itu (uang masuk)
                     $sales = Transaction::whereMonth('transaction_date', $date->month)
                         ->whereYear('transaction_date', $date->year)
                         ->where('status', 'completed')
                         ->sum('final_amount');
                     
                     $chartData[] = [
+                        // Nama periode seperti "Jan 2025"
                         'period' => $date->locale('id')->format('M Y'),
+
+                        // Total revenue bulan itu
                         'sales' => (float) $sales,
+
+                        // Jumlah transaksi selesai
                         'transactions' => Transaction::whereMonth('transaction_date', $date->month)
                             ->whereYear('transaction_date', $date->year)
                             ->where('status', 'completed')
@@ -166,11 +193,13 @@ class DashboardController extends Controller
                 }
             }
 
+            // Kirim data chart ke frontend
             return response()->json([
                 'success' => true,
                 'data' => $chartData
             ]);
         } catch (\Exception $e) {
+            // Error handling
             return response()->json([
                 'success' => false,
                 'message' => 'Gagal mengambil data chart',
@@ -178,13 +207,14 @@ class DashboardController extends Controller
             ], 500);
         }
     }
-
     /**
      * Get low stock alerts
+     * → fungsi ini cek produk yang hampir habis (stok rendah)
      */
     public function lowStockAlerts()
     {
         try {
+            // Ambil produk dengan stok di bawah batas (misal < 10)
             $lowStockProducts = Product::active()
                 ->lowStock(10)
                 ->get()
@@ -198,12 +228,14 @@ class DashboardController extends Controller
                     ];
                 });
 
+            // Kirim data produk rendah stok
             return response()->json([
                 'success' => true,
                 'data' => $lowStockProducts,
                 'count' => $lowStockProducts->count()
             ]);
         } catch (\Exception $e) {
+            // Error handling
             return response()->json([
                 'success' => false,
                 'message' => 'Gagal mengambil data stok rendah',
@@ -211,27 +243,34 @@ class DashboardController extends Controller
             ], 500);
         }
     }
-
     /**
      * Get financial summary
+     * → Ringkasan keuangan: total pemasukan, transaksi, avg, top produk
      */
     public function financialSummary(Request $request)
     {
         try {
+            // Ambil bulan & tahun (default sekarang)
             $month = $request->input('month', date('m'));
             $year = $request->input('year', date('Y'));
 
+            // Transaksi selesai periode ini
             $transactions = Transaction::whereMonth('transaction_date', $month)
                 ->whereYear('transaction_date', $year)
                 ->where('status', 'completed');
 
+            // Total revenue bulan ini
             $totalRevenue = $transactions->sum('final_amount');
+
+            // Total transaksi selesai
             $totalTransactions = $transactions->count();
+
+            // Rata2 nilai transaksi
             $averageTransaction = $totalTransactions > 0 
                 ? $totalRevenue / $totalTransactions 
                 : 0;
 
-            // Top selling products
+            // Ambil produk terlaris
             $topProducts = Transaction::whereMonth('transaction_date', $month)
                 ->whereYear('transaction_date', $year)
                 ->where('transactions.status', 'completed')
@@ -248,6 +287,7 @@ class DashboardController extends Controller
                 ->limit(5)
                 ->get();
 
+            // Kirim ringkasan
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -262,6 +302,7 @@ class DashboardController extends Controller
                 ]
             ]);
         } catch (\Exception $e) {
+            // Error response
             return response()->json([
                 'success' => false,
                 'message' => 'Gagal mengambil ringkasan keuangan',

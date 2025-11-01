@@ -11,11 +11,13 @@ use Illuminate\Support\Facades\Storage;
 
 class EmployeeController extends Controller
 {
+    //  List data karyawan + fitur filter + pencarian + sorting + pagination
     public function index(Request $request)
     {
         try {
-            $query = Employee::query();
+            $query = Employee::query(); // Query awal employee table
 
+            //  Pencarian berdasarkan nama, email, kode pegawai, jabatan
             if ($request->has('search')) {
                 $search = $request->search;
                 $query->where(function($q) use ($search) {
@@ -26,18 +28,22 @@ class EmployeeController extends Controller
                 });
             }
 
+            //  Filter status (active / inactive / terminated)
             if ($request->has('status')) {
                 $query->where('status', $request->status);
             }
 
+            //  Filter berdasarkan department
             if ($request->has('department')) {
                 $query->where('department', $request->department);
             }
 
+            //  Sorting (default: newest first)
             $sortBy = $request->input('sort_by', 'created_at');
             $sortOrder = $request->input('sort_order', 'desc');
             $query->orderBy($sortBy, $sortOrder);
 
+            // Pagination (default 15 data)
             $perPage = $request->input('per_page', 15);
             $employees = $query->paginate($perPage);
 
@@ -54,20 +60,22 @@ class EmployeeController extends Controller
         }
     }
 
+    //  Menambah karyawan baru + upload foto + validasi input
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
-            'email' => 'required|email|unique:employees,email',
+            'email' => 'required|email|unique:employees,email', // email harus unik
             'phone' => 'nullable|string|max:20',
             'position' => 'required|string|max:255',
             'department' => 'nullable|string|max:255',
             'salary' => 'nullable|numeric|min:0',
             'join_date' => 'required|date',
             'address' => 'nullable|string',
-            'photo' => 'nullable|image|mimes:jpeg,png,jpg|max:2048'
+            'photo' => 'nullable|image|mimes:jpeg,png,jpg|max:2048' // upload foto max 2MB
         ]);
 
+        //  Kalau validasi gagal
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
@@ -79,12 +87,13 @@ class EmployeeController extends Controller
         try {
             $data = $request->all();
 
+            //  Simpan foto ke storage/public/employees
             if ($request->hasFile('photo')) {
                 $photoPath = $request->file('photo')->store('employees', 'public');
                 $data['photo'] = $photoPath;
             }
 
-            $employee = Employee::create($data);
+            $employee = Employee::create($data); // simpan data ke database
 
             return response()->json([
                 'success' => true,
@@ -100,17 +109,20 @@ class EmployeeController extends Controller
         }
     }
 
+    //  Detail karyawan + ambil riwayat absensi 30 hari terakhir + hitung statistik absensi bulan ini
     public function show($id)
     {
         try {
             $employee = Employee::with(['attendances' => function($query) {
-                $query->orderBy('date', 'desc')->limit(30);
+                $query->orderBy('date', 'desc')->limit(30); // ambil 30 absensi terbaru
             }])->findOrFail($id);
 
+            // ambil absensi bulan ini
             $thisMonthAttendance = Attendance::where('employee_id', $id)
                 ->thisMonth()
                 ->get();
 
+            // Hitung statistik absensi
             $stats = [
                 'total_days' => $thisMonthAttendance->count(),
                 'present' => $thisMonthAttendance->where('status', 'present')->count(),
@@ -120,7 +132,7 @@ class EmployeeController extends Controller
                 'sick' => $thisMonthAttendance->where('status', 'sick')->count()
             ];
 
-            $employee->attendance_stats = $stats;
+            $employee->attendance_stats = $stats; // tambahkan statistik ke data
 
             return response()->json([
                 'success' => true,
@@ -135,6 +147,7 @@ class EmployeeController extends Controller
         }
     }
 
+    // Update data karyawan + update foto (hapus foto lama)
     public function update(Request $request, $id)
     {
         $validator = Validator::make($request->all(), [
@@ -150,6 +163,7 @@ class EmployeeController extends Controller
             'photo' => 'nullable|image|mimes:jpeg,png,jpg|max:2048'
         ]);
 
+        // kalau validasi gagal
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
@@ -162,6 +176,7 @@ class EmployeeController extends Controller
             $employee = Employee::findOrFail($id);
             $data = $request->all();
 
+            // ✅ jika upload foto baru → hapus foto lama
             if ($request->hasFile('photo')) {
                 if ($employee->photo) {
                     Storage::disk('public')->delete($employee->photo);
@@ -186,16 +201,18 @@ class EmployeeController extends Controller
         }
     }
 
+    // Hapus karyawan + hapus foto dari storage
     public function destroy($id)
     {
         try {
             $employee = Employee::findOrFail($id);
             
+            //  kalau ada foto → hapus dari penyimpanan
             if ($employee->photo) {
                 Storage::disk('public')->delete($employee->photo);
             }
 
-            $employee->delete();
+            $employee->delete(); // hapus data
 
             return response()->json([
                 'success' => true,
